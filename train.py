@@ -1,3 +1,8 @@
+import os
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -24,19 +29,13 @@ checkpoint_callback = ModelCheckpoint(
 logger = TensorBoardLogger("logs", name="segmentation")
 
 
-# strategy = FSDPStrategy(
-#     cpu_offload=True,
-# )
-
-
 trainer = Trainer(
     max_epochs=10,
     callbacks=[checkpoint_callback],
     logger=logger,
-    accelerator="cpu",
-    # precision="16-mixed",
+    precision="16-mixed",
+    accelerator="gpu",
     log_every_n_steps=50,
-    # strategy=strategy,
 )
 
 
