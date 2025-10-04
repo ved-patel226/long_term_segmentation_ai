@@ -101,6 +101,7 @@ class COCODatasetLOADER(Dataset):
 
     def __len__(self):
         return len(self.mask_ids)
+        # return 100
 
     def __getitem__(self, idx):
         mask = torch.from_numpy(self.masks[idx]).long()

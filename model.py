@@ -12,36 +12,36 @@ class SimpleSegNet(nn.Module):
         self.enc1 = nn.Sequential(
             nn.Conv2d(in_channels, 64, 3, padding=1),
             nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
         )
         self.enc2 = nn.Sequential(
             nn.Conv2d(64, 128, 3, stride=2, padding=1),  # downsample
             nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
         )
         self.enc3 = nn.Sequential(
             nn.Conv2d(128, 256, 3, stride=2, padding=1),
             nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
         )
 
         self.bottleneck = nn.Sequential(
             nn.Conv2d(256, 512, 3, padding=1),
             nn.BatchNorm2d(512),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
         )
 
         self.up2 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
         self.dec2 = nn.Sequential(
             nn.Conv2d(256, 256, 3, padding=1),
             nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
         )
         self.up1 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
         self.dec1 = nn.Sequential(
             nn.Conv2d(128, 128, 3, padding=1),
             nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
         )
 
         self.out_conv = nn.Conv2d(128, out_channels, kernel_size=1)
@@ -64,36 +64,39 @@ class SegmentationModel(pl.LightningModule):
         self.model = SimpleSegNet()
         self.lr = lr
 
+        self._init_weights()
+
     def forward(self, x):
         return self.model(x)
 
-    def _prepare_masks(self, masks: torch.Tensor) -> torch.Tensor:
-        """
-        Ensure masks are shape [B,1,H,W] and in [0,1].
-        Handles masks in {0,1} or {0,255} (or other 0..255).
-        """
-        masks = masks.unsqueeze(1).float()  # ensure [B,1,H,W] and float
-        # If masks appear to be in 0..255, normalize
-        if masks.max() > 1.0:
-            masks = masks / 255.0
-        return masks.clamp(0.0, 1.0)
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+                nn.init.kaiming_normal_(
+                    m.weight, mode="fan_out", nonlinearity="leaky_relu"
+                )
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, _):
         imgs, masks = batch
-        masks = self._prepare_masks(masks)
         logits = self(imgs)
         loss = F.binary_cross_entropy_with_logits(logits, masks)
         self.log("train_loss", loss, prog_bar=True)
-        _ = batch_idx  # reference to silence "not accessed"
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, _):
         imgs, masks = batch
         masks = self._prepare_masks(masks)
         logits = self(imgs)
         loss = F.binary_cross_entropy_with_logits(logits, masks)
         self.log("val_loss", loss, prog_bar=True)
-        _ = batch_idx  # reference to silence "not accessed"
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-5)
@@ -107,47 +110,8 @@ class SegmentationModel(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val_loss",
+                "monitor": "train_loss",
                 "interval": "epoch",
                 "frequency": 1,
             },
         }
-
-
-def main() -> None:
-    from torchsummary import summary
-
-    img_path = "./dataset/train2014/COCO_train2014_000000000009.jpg"
-
-    model = SegmentationModel()
-    model.eval()
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-
-    img = Image.open(img_path).convert("RGB")
-    transform = T.Compose(
-        [
-            T.Resize((512, 512)),
-            T.ToTensor(),
-        ]
-    )
-    img_to_tensor = transform(img).unsqueeze(0).to(device)
-
-    summary(model, img_to_tensor.shape[1:])
-
-    import matplotlib.pyplot as plt
-
-    with torch.no_grad():
-        output = model(img_to_tensor)
-        output_img = output.squeeze().cpu().numpy()
-
-    plt.imshow(output_img, cmap="gray")
-    plt.title("Model Output")
-    plt.axis("off")
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()
-# ...existing code...
