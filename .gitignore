@@ -3,3 +3,4 @@ logs
 __pycache__
 all_imgs.npy
 all_masks.npy
+all_masks_ids.npy

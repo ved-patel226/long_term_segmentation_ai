@@ -1,6 +1,8 @@
+from concurrent.futures import ThreadPoolExecutor
 import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset
 from pycocotools.coco import COCO
+from tqdm import tqdm
 from PIL import Image
 import numpy as np
 import torch
@@ -8,12 +10,11 @@ import torch
 from config import imageDir, annFile
 
 
-class COCODataset(Dataset):
-    """COCO dataset wrapper that returns resized tensors for image and mask.
-
-    Returns:
-        image: torch.FloatTensor (C,H,W) in [0,1]
-        mask:  torch.LongTensor (H,W) with integer class ids (0 = background)
+class COCODatasetMAKER(Dataset):
+    """
+    #NOTE
+    COCO dataset to create all_masks_ids.npy and all_masks.npy.
+    Use COCODatasetLOADER for loading the precomputed masks.
     """
 
     def __init__(self, coco: COCO, image_dir, size=(256, 256), transform=None):
@@ -21,6 +22,7 @@ class COCODataset(Dataset):
         self.image_dir = image_dir
         self.transform = transform
         self.size = size
+
         self.img_ids = self.coco.getImgIds(catIds=[1])
 
     def __len__(self):
@@ -28,6 +30,7 @@ class COCODataset(Dataset):
 
     def __getitem__(self, idx):
         img_id = self.img_ids[idx]
+
         ann_ids = self.coco.getAnnIds(imgIds=[img_id])
         anns = self.coco.loadAnns(ann_ids)
         img_info = self.coco.loadImgs(img_id)[0]
@@ -55,13 +58,67 @@ class COCODataset(Dataset):
         return img_id, mask
 
 
-def main() -> None:
+class COCODatasetLOADER(Dataset):
+    """
+    #NOTE
+    COCO dataset to load precomputed all_masks_ids.npy and all_masks.npy.
+    Use COCODatasetMAKER to create these files.
+    """
+
+    def __init__(self, coco: COCO, image_dir, size=(256, 256)):
+        self.coco = coco
+        self.image_dir = image_dir
+        self.size = size
+
+        self.mask_ids = np.load(
+            "all_masks_ids.npy",
+            allow_pickle=True,
+        )
+        self.masks = np.memmap(
+            "all_masks.npy",
+            dtype=np.uint8,
+            mode="r",
+            shape=(len(self.mask_ids), 512, 512),
+        )
+
+        # Too much data to preload into memory
+
+        # with ThreadPoolExecutor() as executor:
+        #     self.images = list(
+        #         tqdm(
+        #             executor.map(
+        #                 lambda x: load_image(x, self.image_dir, self.size),
+        #                 self.coco.loadImgs(self.mask_ids.tolist()),
+        #             ),
+        #             total=len(self.mask_ids),
+        #             desc="Loading images",
+        #         )
+        #     )
+
+    def load_image(self, img_info, image_dir, size):
+        with Image.open(f"{image_dir}/{img_info['file_name']}") as image:
+            return TF.to_tensor(image.convert("RGB").resize(size, Image.BILINEAR))
+
+    def __len__(self):
+        return len(self.mask_ids)
+
+    def __getitem__(self, idx):
+        mask = torch.from_numpy(self.masks[idx]).long()
+
+        img = self.load_image(
+            self.coco.loadImgs([self.mask_ids[idx]])[0], self.image_dir, self.size
+        )
+
+        return img, mask
+
+
+def create_dataset() -> None:
     from tqdm import tqdm
     import numpy as np
 
     coco = COCO(annFile)
 
-    dataset = COCODataset(coco, imageDir, size=(512, 512))
+    dataset = COCODatasetMAKER(coco, imageDir, size=(512, 512))
 
     masks_mm = np.memmap(
         "all_masks.npy", dtype=np.uint8, mode="w+", shape=(len(dataset), 512, 512)
@@ -76,4 +133,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    create_dataset()
