@@ -55,14 +55,18 @@ class SimpleSegNet(nn.Module):
         x = self.dec2(x)
         x = self.up1(x)
         x = self.dec1(x)
-        return self.out_conv(x)
+        x = self.out_conv(x)
+
+        return x
 
 
 class SegmentationModel(pl.LightningModule):
-    def __init__(self, lr=1e-3):
+    def __init__(self, lr=1e-3, n_clases=90):
         super().__init__()
         self.model = SimpleSegNet()
         self.lr = lr
+
+        self.n_classes = n_clases  # Set the number of classes based on your dataset
 
         self._init_weights()
 
@@ -86,17 +90,17 @@ class SegmentationModel(pl.LightningModule):
 
     def training_step(self, batch, _):
         imgs, masks = batch
-        logits = self(imgs)
-        loss = F.binary_cross_entropy_with_logits(logits, masks)
-        self.log("train_loss", loss, prog_bar=True)
-        return loss
 
-    def validation_step(self, batch, _):
-        imgs, masks = batch
-        masks = self._prepare_masks(masks)
         logits = self(imgs)
-        loss = F.binary_cross_entropy_with_logits(logits, masks)
-        self.log("val_loss", loss, prog_bar=True)
+        masks = masks.unsqueeze(1)
+
+        loss = F.binary_cross_entropy_with_logits(logits, masks.float())
+
+        self.log("train_loss", loss, prog_bar=True)
+        lr = self.optimizers().param_groups[0]["lr"]
+        self.log("lr", lr, prog_bar=True)
+
+        return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-5)
