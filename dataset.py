@@ -2,12 +2,11 @@ from concurrent.futures import ThreadPoolExecutor
 import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset
 from pycocotools.coco import COCO
-from tqdm import tqdm
 from PIL import Image
 import numpy as np
 import torch
 
-from config import imageDir, annFile
+from config import imageDir, annFile, imageSize
 
 
 class COCODatasetMAKER(Dataset):
@@ -83,20 +82,6 @@ class COCODatasetLOADER(Dataset):
             shape=(len(self.mask_ids), 512, 512),
         )
 
-        # Too much data to preload into memory
-
-        # with ThreadPoolExecutor() as executor:
-        #     self.images = list(
-        #         tqdm(
-        #             executor.map(
-        #                 lambda x: load_image(x, self.image_dir, self.size),
-        #                 self.coco.loadImgs(self.mask_ids.tolist()),
-        #             ),
-        #             total=len(self.mask_ids),
-        #             desc="Loading images",
-        #         )
-        #     )
-
     def load_image(self, img_info, image_dir, size):
         with Image.open(f"{image_dir}/{img_info['file_name']}") as image:
             return TF.to_tensor(image.convert("RGB").resize(size, Image.BILINEAR))
@@ -121,20 +106,18 @@ def create_dataset() -> None:
 
     coco = COCO(annFile)
 
-    dataset = COCODatasetMAKER(coco, imageDir, size=(512, 512))
+    dataset = COCODatasetMAKER(coco, imageDir, size=imageSize)
 
-    print(dataset[0])
+    masks_mm = np.memmap(
+        "all_masks.npy", dtype=np.uint8, mode="w+", shape=(len(dataset), *imageSize)
+    )
+    ids = []
 
-    # masks_mm = np.memmap(
-    #     "all_masks.npy", dtype=np.uint8, mode="w+", shape=(len(dataset), 512, 512)
-    # )
-    # ids = []
+    for i, (id, mask) in enumerate(tqdm(dataset)):
+        masks_mm[i] = mask.numpy()
+        ids.append(id)
 
-    # for i, (id, mask) in enumerate(tqdm(dataset)):
-    #     masks_mm[i] = mask.numpy()
-    #     ids.append(id)
-
-    # np.save("all_masks_ids.npy", np.array(ids))
+    np.save("all_masks_ids.npy", np.array(ids))
 
 
 if __name__ == "__main__":

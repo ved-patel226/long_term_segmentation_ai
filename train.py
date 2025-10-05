@@ -6,12 +6,13 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
-from config import imageDir, annFile
+from config import imageDir, annFile, imageSize
 from dataset import COCODatasetLOADER
 from torch.utils.data import DataLoader
 from model import SegmentationModel
 from pycocotools.coco import COCO
 import os
+from torch.utils.data import random_split
 
 
 coco = COCO(annFile)
@@ -39,9 +40,23 @@ trainer = Trainer(
 )
 
 
-dataset = COCODatasetLOADER(coco, imageDir, size=(512, 512))
+dataset = COCODatasetLOADER(coco, imageDir, size=imageSize)
+
+train_size = int(0.8 * len(dataset))
+val_size = len(dataset) - train_size
+
+train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
 train_loader = DataLoader(
-    dataset,
+    train_dataset,
+    batch_size=10,
+    shuffle=True,
+    num_workers=27,
+    pin_memory=True,
+    persistent_workers=True,
+)
+val_loader = DataLoader(
+    val_dataset,
     batch_size=10,
     shuffle=True,
     num_workers=27,
@@ -49,9 +64,10 @@ train_loader = DataLoader(
     persistent_workers=True,
 )
 
+
 model = SegmentationModel()
 
-logger.watch(model, log="all", log_freq=100)  # gradient and parameter logging
+logger.watch(model, log="all", log_freq=50)  # gradient and parameter logging
 
 trainer.fit(model, train_loader)
 
