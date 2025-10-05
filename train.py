@@ -1,7 +1,8 @@
 import os
+import torch
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
+torch.set_float32_matmul_precision("high")
 
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -37,6 +38,7 @@ trainer = Trainer(
     precision="16-mixed",
     accelerator="gpu",
     log_every_n_steps=50,
+    val_check_interval=0.5,
 )
 
 
@@ -49,7 +51,7 @@ train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
 train_loader = DataLoader(
     train_dataset,
-    batch_size=10,
+    batch_size=8,
     shuffle=True,
     num_workers=27,
     pin_memory=True,
@@ -57,7 +59,7 @@ train_loader = DataLoader(
 )
 val_loader = DataLoader(
     val_dataset,
-    batch_size=10,
+    batch_size=8,
     shuffle=True,
     num_workers=27,
     pin_memory=True,
