@@ -132,7 +132,7 @@ class SegmentationModel(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "train_loss",
+                "monitor": "val_loss",
                 "interval": "epoch",
                 "frequency": 1,
             },

@@ -2,7 +2,8 @@ import os
 import torch
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-torch.set_float32_matmul_precision("high")
+torch.set_float32_matmul_precision("medium")
+torch.backends.cudnn.benchmark = True
 
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -21,7 +22,7 @@ coco = COCO(annFile)
 seed_everything(42)
 
 checkpoint_callback = ModelCheckpoint(
-    monitor="train_loss",
+    monitor="val_loss",
     dirpath="./checkpoints",
     filename="best-checkpoint",
     save_top_k=1,
@@ -49,11 +50,13 @@ val_size = len(dataset) - train_size
 
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
+num_workers = os.cpu_count() - 1 if os.cpu_count() else 4
+
 train_loader = DataLoader(
     train_dataset,
     batch_size=8,
     shuffle=True,
-    num_workers=27,
+    num_workers=num_workers,
     pin_memory=True,
     persistent_workers=True,
 )
@@ -61,16 +64,19 @@ val_loader = DataLoader(
     val_dataset,
     batch_size=8,
     shuffle=True,
-    num_workers=27,
+    num_workers=num_workers,
     pin_memory=True,
     persistent_workers=True,
 )
 
 
-model = SegmentationModel()
+model = SegmentationModel.load_from_checkpoint(
+    "checkpoints/current-best-pretrained.ckpt"
+)
+model = torch.compile(model)
 
 logger.watch(model, log="all", log_freq=50)  # gradient and parameter logging
 
-trainer.fit(model, train_loader)
+trainer.fit(model, train_loader, val_loader)
 
 # os.system("shutdown now")

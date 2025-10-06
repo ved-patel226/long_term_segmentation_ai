@@ -38,12 +38,12 @@ class COCODatasetMAKER(Dataset):
         image = Image.open(img_path).convert("RGB")
 
         orig_w, orig_h = image.size
-        mask = np.zeros((orig_h, orig_w), dtype=np.uint8)
+        mask = np.zeros((orig_h, orig_w), dtype=np.bool)
 
         for i, ann in enumerate(anns, 1):
             if ann["category_id"] != 1:
                 continue
-            ann_mask = self.coco.annToMask(ann).astype(np.uint8)
+            ann_mask = self.coco.annToMask(ann).astype(np.bool)
             mask[ann_mask == 1] = 1
 
         if self.size is not None:
@@ -77,7 +77,7 @@ class COCODatasetLOADER(Dataset):
         )
         self.masks = np.memmap(
             "all_masks.npy",
-            dtype=np.uint8,
+            dtype=np.bool,
             mode="r",
             shape=(len(self.mask_ids), 512, 512),
         )
@@ -109,7 +109,7 @@ def create_dataset() -> None:
     dataset = COCODatasetMAKER(coco, imageDir, size=imageSize)
 
     masks_mm = np.memmap(
-        "all_masks.npy", dtype=np.uint8, mode="w+", shape=(len(dataset), *imageSize)
+        "all_masks.npy", dtype=np.bool, mode="w+", shape=(len(dataset), *imageSize)
     )
     ids = []
 
