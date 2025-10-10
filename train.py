@@ -8,14 +8,15 @@ torch.backends.cudnn.benchmark = True
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
-from config import imageDir, annFile, imageSize
+from config import imageDir, annFile, imageSize, loadPretrained
 from dataset import COCODatasetLOADER
 from torch.utils.data import DataLoader
-from model import SegmentationModel
 from pycocotools.coco import COCO
 import os
 from torch.utils.data import random_split
 
+
+from model.model import SegmentationModel
 
 coco = COCO(annFile)
 
@@ -40,6 +41,7 @@ trainer = Trainer(
     accelerator="gpu",
     log_every_n_steps=50,
     val_check_interval=0.5,
+    gradient_clip_val=1.0,
 )
 
 
@@ -63,17 +65,19 @@ train_loader = DataLoader(
 val_loader = DataLoader(
     val_dataset,
     batch_size=8,
-    shuffle=True,
+    shuffle=False,
     num_workers=num_workers,
     pin_memory=True,
     persistent_workers=True,
 )
 
 
-model = SegmentationModel.load_from_checkpoint(
-    "checkpoints/current-best-pretrained.ckpt"
-)
-model = torch.compile(model)
+if loadPretrained:
+    model = SegmentationModel.load_from_checkpoint("checkpoints/best-checkpoint.ckpt")
+else:
+    model = SegmentationModel()
+
+# model = torch.compile(model) loss becomes NaN ?
 
 logger.watch(model, log="all", log_freq=50)  # gradient and parameter logging
 

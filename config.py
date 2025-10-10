@@ -4,4 +4,4 @@ imageDir = "dataset/train2014/"
 # https://cocodataset.org/#download
 
 imageSize = (512, 512)  # Resize images to this size
-loadPretrained = True  # Use a pretrained model
+loadPretrained = False  # Use a pretrained model
