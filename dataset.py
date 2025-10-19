@@ -38,12 +38,12 @@ class COCODatasetMAKER(Dataset):
         image = Image.open(img_path).convert("RGB")
 
         orig_w, orig_h = image.size
-        mask = np.zeros((orig_h, orig_w), dtype=np.bool)
+        mask = np.zeros((orig_h, orig_w), dtype=np.bool_)
 
         for i, ann in enumerate(anns, 1):
             if ann["category_id"] != 1:
                 continue
-            ann_mask = self.coco.annToMask(ann).astype(np.bool)
+            ann_mask = self.coco.annToMask(ann).astype(np.bool_)
             mask[ann_mask == 1] = 1
 
         if self.size is not None:
@@ -77,7 +77,7 @@ class COCODatasetLOADER(Dataset):
         )
         self.masks = np.memmap(
             "all_masks.npy",
-            dtype=np.bool,
+            dtype=np.bool_,
             mode="r",
             shape=(len(self.mask_ids), 512, 512),
         )
@@ -91,7 +91,7 @@ class COCODatasetLOADER(Dataset):
         # return 100
 
     def __getitem__(self, idx):
-        mask = torch.from_numpy(self.masks[idx]).long()
+        mask = torch.from_numpy(self.masks[idx].copy()).float()
 
         img = self.load_image(
             self.coco.loadImgs([self.mask_ids[idx]])[0], self.image_dir, self.size
@@ -109,7 +109,7 @@ def create_dataset() -> None:
     dataset = COCODatasetMAKER(coco, imageDir, size=imageSize)
 
     masks_mm = np.memmap(
-        "all_masks.npy", dtype=np.bool, mode="w+", shape=(len(dataset), *imageSize)
+        "all_masks.npy", dtype=np.bool_, mode="w+", shape=(len(dataset), *imageSize)
     )
     ids = []
 

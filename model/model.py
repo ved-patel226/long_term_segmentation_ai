@@ -2,26 +2,32 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from PIL import Image
 import torchvision.transforms as T
 
 try:
-    from models import UNet3M
+    from models import build_unet
+    from common import dice_loss
 except:
-    from .models import UNet3M
+    from .models import build_unet
+    from .common import dice_loss
 
 
 class SegmentationModel(pl.LightningModule):
     def __init__(
         self,
+        model="UNet483K",
         lr=1e-3,
-        model=None,
+        ckpt_path=None,  # new
     ):
         super().__init__()
-        self.model = model if model is not None else UNet3M()
+        self.model = build_unet(model)
         self.lr = lr
 
-        self._init_weights()
+        if ckpt_path is not None:
+            ckpt = torch.load(ckpt_path, map_location="cuda")
+            self.load_state_dict(ckpt["state_dict"], strict=True)
+        else:
+            self._init_weights()
 
     def forward(self, x):
         return self.model(x)
@@ -45,9 +51,17 @@ class SegmentationModel(pl.LightningModule):
         imgs, masks = batch
 
         logits = self(imgs)
-        masks = masks.unsqueeze(1)
+        logits = torch.clamp(logits, -10, 10)
 
-        loss = F.binary_cross_entropy_with_logits(logits, masks.float())
+        masks = masks.unsqueeze(1).float()
+
+        dice_loss_value = dice_loss(logits, masks)
+        self.log("train_dice_loss", dice_loss_value)
+
+        binary_loss_value = F.binary_cross_entropy_with_logits(logits, masks)
+        self.log("train_bce_loss", binary_loss_value)
+
+        loss = binary_loss_value + dice_loss_value
 
         self.log("train_loss", loss, prog_bar=True)
         lr = self.optimizers().param_groups[0]["lr"]
@@ -59,27 +73,35 @@ class SegmentationModel(pl.LightningModule):
         imgs, masks = batch
 
         logits = self(imgs)
+        logits = torch.clamp(logits, -10, 10)
+
         masks = masks.unsqueeze(1)
 
-        loss = F.binary_cross_entropy_with_logits(logits, masks.float())
+        dice_loss_value = dice_loss(logits, masks)
+        self.log("val_dice_loss", dice_loss_value)
+
+        binary_loss_value = F.binary_cross_entropy_with_logits(logits, masks)
+        self.log("val_bce_loss", binary_loss_value)
+
+        loss = binary_loss_value + dice_loss_value
 
         self.log("val_loss", loss, prog_bar=True)
-
         return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.lr,
-            weight_decay=1e-5,
-            betas=(0.9, 0.999),
+            weight_decay=1e-4,
         )
+
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             mode="min",
             factor=0.5,
             patience=5,
         )
+
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
@@ -95,7 +117,7 @@ def main() -> None:
     from torchsummary import summary
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SegmentationModel(model=UNet3M()).to(device)
+    model = SegmentationModel(model=build_unet("UNet483K")).to(device)
     summary(model, (3, 512, 512), device=str(device))
 
 
